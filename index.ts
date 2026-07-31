@@ -358,6 +358,12 @@ export default function (cmd?: any): any {
 			providers.cliproxy = { module: selfPath };
 			settings.providers = providers;
 			if (settings.model === undefined) {
+				// Id cliproxy-* (no catálogo): las feature calls (title/taste) usan
+				// settings.model contra el registry — con cliproxy-* van a este
+				// provider (proxy); con un id de catálogo irían al built-in gateway
+				// y darían 403 MODEL_NOT_IN_PLAN. La sesión interactiva se elige con
+				// `cmdc --model gpt-5.6-*` (id de catálogo) para banner/effort/
+				// subagentes nativos.
 				settings.model = 'cliproxy-gpt-5.6-sol';
 			}
 			if (changed) {
@@ -384,8 +390,8 @@ export default function (cmd?: any): any {
 					}).then((selected: any) => {
 						const value = typeof selected === 'string' ? selected : undefined;
 						if (!value) return { message: 'Cancelado.' };
-						cmd.setModel?.(value);
 						persistPref(PREF_MODEL_KEY, value);
+						cmd.setModel?.(value);
 						return {
 							message: `Modelo cambiado a ${value}. Aplica al próximo turno.`,
 						};
@@ -429,10 +435,11 @@ export default function (cmd?: any): any {
 			}
 		});
 
-		// Fuerza el modelo de sesión al preferido. Factory-time setModel es buffered
-		// pre-bind y el TUI restaura el modelo de sesión anterior (p.ej. deepseek)
-		// después del bind. onSessionStart dispara DESPUÉS del bind, así que aquí
-		// el setModel sí gana y aplica al turno siguiente.
+		// Fuerza el modelo de sesión al preferido (id cliproxy-*). Necesario en
+		// headless: sin este setModel, el --model gpt-5.6-* del CLI (override) hace
+		// que el harness valide el id contra el plan del gateway y aborte con 403
+		// MODEL_NOT_IN_PLAN antes de llamar al provider. En el TUI no pisa el
+		// --model del arranque (el override manda para el banner/effort).
 		cmd.hooks({
 			onSessionStart: () => {
 				try {
