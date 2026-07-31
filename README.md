@@ -66,10 +66,21 @@ The installer copies the provider to `~/.commandcode/mods/`, writes
 
 ### Interactive TUI
 
+**Recommended start — pass the catalog id so the banner and `/effort` work natively:**
+
+```bash
+cmdc --model gpt-5.6-luna
+```
+
+This shows the real model in the header (`# models: gpt-5.6-luna · taste-1`), makes the native
+`/effort` selector work (the catalog knows `gpt-5.6-*` supports `low/medium/high/xhigh/max`), and
+the turns still route to your proxy.
+
 | Command | What it does |
 |---|---|
 | `/cliproxy model` | Opens a picker with all cliproxy models; selection applies next turn and persists as the preferred model. |
 | `/cliproxy effort` | Opens a picker with `low` / `medium` / `high` / `xhigh` / `max`; selection is sent to the proxy as `reasoning_effort` on every request and persists. |
+| `/effort` (native) | Works when the session model is a catalog id (e.g. started with `--model gpt-5.6-luna`); the chosen effort is passed through to the proxy. |
 | `/cliproxy` | Status: preferred model, effort, base URL, whether the key is set. |
 
 The preferred model is forced at session start (`onSessionStart` → `setModel`), so the session
@@ -118,9 +129,9 @@ or via `~/.commandcode/cliproxy.json`:
   `matchesModelId`, so the harness routes those models to this `direct` transport instead of the
   built-in gateway. Verified with proxy request logs (requests from the local machine hit
   `/v1/chat/completions`).
-- **Banner caveat**: the TUI header keeps showing the catalog model (`deepseek-v4-flash`, etc.)
-  even though the turn runs on your proxy; the feed row and session transcripts show the real
-  model.
+- **Banner caveat**: starting the TUI without `--model` keeps showing the default catalog model
+  (e.g. `deepseek-v4-flash`) in the header even though turns run on your proxy. Start with
+  `cmdc --model gpt-5.6-luna` to show the real model and enable the native `/effort` selector.
 
 ## License
 
