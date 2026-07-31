@@ -146,7 +146,26 @@ function buildProviderModule() {
 			kind: 'direct',
 			stream: async (req: any) => {
 				const model = normalizeModel(req.model);
-				const messages = (req.messages ?? []).map((m: any) => {
+				// system prompt: separado (el proxy OpenAI espera role system)
+				const system =
+					typeof req.system === 'string'
+						? req.system
+						: typeof req.system === 'function'
+							? (req.system({}) ?? '')
+							: '';
+				// tools: formato OpenAI (name/description/parameters)
+				const tools = (req.tools ?? []).map((t: any) => ({
+					type: 'function',
+					function: {
+						name: t.name,
+						description: t.description ?? '',
+						parameters: t.input_schema ?? { type: 'object', properties: {} },
+					},
+				}));
+
+				const messages: any[] = [];
+				if (system) messages.push({ role: 'system', content: system });
+				for (const m of req.messages ?? []) {
 					if (m.role === 'user' && Array.isArray(m.content)) {
 						const parts: string[] = [];
 						for (const c of m.content) {
@@ -158,17 +177,35 @@ function buildProviderModule() {
 								parts.push(`[tool result] ${t}`);
 							}
 						}
-						return { role: 'user', content: parts.join('\n') };
-					}
-					if (m.role === 'assistant' && Array.isArray(m.content)) {
+						messages.push({ role: 'user', content: parts.join('\n') });
+					} else if (m.role === 'assistant' && Array.isArray(m.content)) {
 						const text = m.content
 							.filter((c: any) => c.type === 'text')
 							.map((c: any) => c.text)
 							.join('');
-						return { role: 'assistant', content: text || ' ' };
+						const toolCalls = m.content
+							.filter((c: any) => c.type === 'tool_use')
+							.map((c: any) => ({
+								id: c.id,
+								type: 'function',
+								function: {
+									name: c.name,
+									arguments: JSON.stringify(c.input ?? {}),
+								},
+							}));
+						if (toolCalls.length > 0) {
+							messages.push({
+								role: 'assistant',
+								content: text || null,
+								tool_calls: toolCalls,
+							});
+						} else {
+							messages.push({ role: 'assistant', content: text || ' ' });
+						}
+					} else {
+						messages.push({ role: m.role, content: m.content });
 					}
-					return { role: m.role, content: m.content };
-				});
+				}
 
 				const headers: Record<string, string> = {
 					'Content-Type': 'application/json',
@@ -187,6 +224,7 @@ function buildProviderModule() {
 						body: JSON.stringify({
 							model,
 							messages,
+							...(tools.length > 0 ? { tools } : {}),
 							...(reasoning ? { reasoning_effort: reasoning } : { reasoning_effort: PREF_EFFORT }),
 							...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
 							...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
@@ -200,8 +238,23 @@ function buildProviderModule() {
 					const data = await res.json();
 					const choice = data.choices?.[0];
 					const reasoningText = choice?.message?.reasoning_content ?? '';
-					const text =
-						choice?.message?.content ?? reasoningText ?? '';
+					const text = choice?.message?.content ?? reasoningText ?? '';
+					// tool_calls de la respuesta → content con tipo tool_use (el harness
+					// espera ese shape en el content del assistant).
+					const toolUses = (choice?.message?.tool_calls ?? []).map((tc: any) => {
+						let input: any = {};
+						try {
+							input = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {};
+						} catch {
+							input = {};
+						}
+						return {
+							type: 'tool_use',
+							id: tc.id,
+							name: tc.function?.name ?? '',
+							input,
+						};
+					});
 					// Emit streaming deltas so the harness/TUI paint the response live
 					// and close the turn (text + token usage). Without these, the
 					// response lands in the transcript but never renders until reload.
@@ -211,9 +264,17 @@ function buildProviderModule() {
 						req.onThinkingEnd?.(reasoningText);
 					}
 					if (text) req.onTextDelta?.(String(text));
+					const content: any[] = [];
+					if (text) content.push({ type: 'text', text: String(text) });
+					for (const tu of toolUses) content.push(tu);
 					return {
-						content: [{ type: 'text', text: String(text) }],
-						stopReason: choice?.finish_reason === 'stop' ? 'end_turn' : 'tool_use',
+						content,
+						stopReason:
+							choice?.finish_reason === 'stop' || choice?.finish_reason === 'length'
+								? 'end_turn'
+								: toolUses.length > 0
+									? 'tool_use'
+									: 'end_turn',
 						rawFinishReason: choice?.finish_reason ?? 'stop',
 						usage: data.usage
 							? {
