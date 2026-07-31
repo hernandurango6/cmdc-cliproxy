@@ -32,21 +32,6 @@ const MODELS = [
 	{ id: 'cliproxy-codex-auto-review', name: 'Codex Auto Review (CLIProxyAPI)', efforts: ['low', 'medium', 'high'] },
 ];
 
-// Reclamar también los ids del catálogo de Command Code (gpt-5.6-sol/terra/luna, etc.)
-// para que headless/--model los enrute a este provider direct en vez del built-in
-// gateway (que bloquea por plan y va al backend de Command Code). Verificado con
-// logs del proxy: los requests --model gpt-5.6-* llegan al proxy. En el TUI el
-// picker sigue mostrando los ids cliproxy-* vía /cliproxy model.
-const CATALOG_IDS: { id: string; name: string; efforts?: string[] }[] = [
-	{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-	{ id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-	{ id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-	{ id: 'gpt-5.5', name: 'GPT-5.5 (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh'] },
-	{ id: 'gpt-5.4', name: 'GPT-5.4 (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh'] },
-	{ id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high'] },
-];
-const ALL_MODELS = [...MODELS, ...CATALOG_IDS];
-
 const MODEL_IDS = MODELS.map((m) => m.id);
 
 // Placeholders in cliproxy.json mean "not configured yet" — fall back to env/default.
@@ -141,7 +126,7 @@ function buildProviderModule() {
 	return {
 		id: 'cliproxy',
 		displayName: 'CLIProxyAPI',
-		models: ALL_MODELS,
+		models: MODELS,
 		transport: {
 			kind: 'direct',
 			stream: async (req: any) => {
@@ -327,7 +312,7 @@ function buildProviderModule() {
 		hooks: {
 			onResponse: ({ response }: { response: any }) => response,
 		},
-		matchesModelId: (id: string) => ALL_MODELS.some((m) => m.id === id),
+		matchesModelId: (id: string) => MODELS.some((m) => m.id === id),
 	};
 }
 
@@ -435,19 +420,17 @@ export default function (cmd?: any): any {
 			}
 		});
 
-		// Forzar el modelo de sesión al preferido SOLO en headless (sin TTY):
-		// en headless, un `--model gpt-5.6-*` del CLI (override) hace que el
-		// harness valide el id contra el plan del gateway y aborte con 403
-		// MODEL_NOT_IN_PLAN antes de llamar al provider — pisar el override con
-		// cliproxy-* evita eso y el turno va al proxy.
-		// En el TUI NO se fuerza: el `--model gpt-5.6-*` del arranque queda activo
-		// en runtime (banner, /effort, subagentes heredan un id de catálogo y
-		// enrutan al proxy). Forzarlo ahí pisa el override y rompe los subagentes
-		// (el id cliproxy-* no pasa la validación describeUnknownSubagentModel).
-		const isTui = Boolean(process.stdout.isTTY);
+		// Fuerza el modelo de sesión al preferido (id cliproxy-*). Este forzado es
+		// lo que hace que las llamadas enruten a este provider (direct → proxy):
+		// sin él, los ids del catálogo (gpt-5.6-*) van al built-in gateway (403
+		// MODEL_NOT_IN_PLAN o billing de Command Code). El `--model gpt-5.6-*` del
+		// arranque queda para el banner/effort del TUI (cosmético), pero el runtime
+		// real usa el cliproxy-* forzado.
+		// Limitación conocida: los subagentes no pueden usar este provider porque
+		// el harness valida su modelo contra el catálogo (describeUnknownSubagentModel)
+		// y los ids cliproxy-* no están ahí; los ids del catálogo van al gateway.
 		cmd.hooks({
 			onSessionStart: () => {
-				if (isTui) return;
 				try {
 					cmd.setModel?.(PREF_MODEL);
 				} catch {
@@ -455,13 +438,11 @@ export default function (cmd?: any): any {
 				}
 			},
 		});
-		// En factory también, para headless (el orden del bind difiere).
-		if (!isTui) {
-			try {
-				cmd.setModel?.(PREF_MODEL);
-			} catch {
-				// best-effort
-			}
+		// También en factory, donde el orden del bind difiere.
+		try {
+			cmd.setModel?.(PREF_MODEL);
+		} catch {
+			// best-effort
 		}
 	}
 	return module;
