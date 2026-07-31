@@ -174,10 +174,20 @@ function buildProviderModule() {
 								const t = Array.isArray(c.content)
 									? c.content.map((x: any) => x.text ?? '').join('')
 									: String(c.content ?? '');
-								parts.push(`[tool result] ${t}`);
+								// El proxy OpenAI espera role "tool" con tool_call_id,
+								// no el resultado incrustado en texto user.
+								if (c.tool_use_id) {
+									messages.push({
+										role: 'tool',
+										tool_call_id: c.tool_use_id,
+										content: t,
+									});
+								} else {
+									parts.push(`[tool result] ${t}`);
+								}
 							}
 						}
-						messages.push({ role: 'user', content: parts.join('\n') });
+						if (parts.length > 0) messages.push({ role: 'user', content: parts.join('\n') });
 					} else if (m.role === 'assistant' && Array.isArray(m.content)) {
 						const text = m.content
 							.filter((c: any) => c.type === 'text')
