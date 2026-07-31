@@ -240,9 +240,21 @@ export default function (cmd?: any): any {
 				message: `CLIProxyAPI provider registered. Config: ${CONFIG_PATH}. Base: ${BASE_URL}. Models: ${MODELS.length}. Key: ${API_KEY ? 'set' : 'NOT set'}`,
 			}),
 		});
-		// Force the session model to a cliproxy model at bind time. The session model
-		// (setSessionModel) overrides settings.model, so without this the interactive
-		// session stays on the default catalog model even though the provider is loaded.
+		// Force the session model to a cliproxy model. Factory-time setModel is buffered
+		// pre-bind and the TUI restores the previously selected session model (e.g.
+		// deepseek) after bind - so it wins. onSessionStart fires AFTER the host binds
+		// (source: 'startup' | 'resume'), so setModel here lands after that restore and
+		// actually sticks.
+		cmd.hooks({
+			onSessionStart: () => {
+				try {
+					cmd.setModel?.('cliproxy-gpt-5.6-sol');
+				} catch {
+					// best-effort
+				}
+			},
+		});
+		// Also apply at factory time for headless runs, where bind order differs.
 		try {
 			cmd.setModel?.('cliproxy-gpt-5.6-sol');
 		} catch {
