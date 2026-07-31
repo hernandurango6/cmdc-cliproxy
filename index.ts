@@ -20,6 +20,19 @@ const CONFIG_PATH = join(homedir(), '.commandcode', 'cliproxy.json');
 const SETTINGS_PATH = join(homedir(), '.commandcode', 'settings.json');
 const PREF_MODEL_KEY = 'model'; // in cliproxy.json — the user's preferred cliproxy model
 
+const MODELS = [
+	{ id: 'cliproxy-gpt-5.6-sol', name: 'GPT-5.6 Sol (CLIProxyAPI)' },
+	{ id: 'cliproxy-gpt-5.6-terra', name: 'GPT-5.6 Terra (CLIProxyAPI)' },
+	{ id: 'cliproxy-gpt-5.6-luna', name: 'GPT-5.6 Luna (CLIProxyAPI)' },
+	{ id: 'cliproxy-gpt-5.5', name: 'GPT-5.5 (CLIProxyAPI)' },
+	{ id: 'cliproxy-gpt-5.4', name: 'GPT-5.4 (CLIProxyAPI)' },
+	{ id: 'cliproxy-gpt-5.4-mini', name: 'GPT-5.4 Mini (CLIProxyAPI)' },
+	{ id: 'cliproxy-gpt-5.3-codex-spark', name: 'GPT-5.3 Codex Spark (CLIProxyAPI)' },
+	{ id: 'cliproxy-codex-auto-review', name: 'Codex Auto Review (CLIProxyAPI)' },
+];
+
+const MODEL_IDS = MODELS.map((m) => m.id);
+
 // Placeholders in cliproxy.json mean "not configured yet" — fall back to env/default.
 const PLACEHOLDER = (s: string | undefined) =>
 	!s || s.startsWith('YOUR_') || s === '';
@@ -78,19 +91,6 @@ function persistPrefModel(modelId: string): void {
 		// best-effort
 	}
 }
-
-const MODELS = [
-	{ id: 'cliproxy-gpt-5.6-sol', name: 'GPT-5.6 Sol (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.6-terra', name: 'GPT-5.6 Terra (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.6-luna', name: 'GPT-5.6 Luna (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.5', name: 'GPT-5.5 (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.4', name: 'GPT-5.4 (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.4-mini', name: 'GPT-5.4 Mini (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.3-codex-spark', name: 'GPT-5.3 Codex Spark (CLIProxyAPI)' },
-	{ id: 'cliproxy-codex-auto-review', name: 'Codex Auto Review (CLIProxyAPI)' },
-];
-
-const MODEL_IDS = MODELS.map((m) => m.id);
 
 const normalizeModel = (model: string): string => {
 	if (model.startsWith('cliproxy-')) return model.slice('cliproxy-'.length);
