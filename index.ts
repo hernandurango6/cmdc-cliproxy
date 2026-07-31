@@ -18,12 +18,13 @@ import { fileURLToPath } from 'node:url';
 
 const CONFIG_PATH = join(homedir(), '.commandcode', 'cliproxy.json');
 const SETTINGS_PATH = join(homedir(), '.commandcode', 'settings.json');
+const PREF_MODEL_KEY = 'model'; // in cliproxy.json — the user's preferred cliproxy model
 
 // Placeholders in cliproxy.json mean "not configured yet" — fall back to env/default.
 const PLACEHOLDER = (s: string | undefined) =>
 	!s || s.startsWith('YOUR_') || s === '';
 
-function loadConfig(): { baseUrl?: string; apiKey?: string } {
+function loadConfig(): { baseUrl?: string; apiKey?: string; model?: string } {
 	try {
 		const raw = readFileSync(CONFIG_PATH, 'utf8');
 		const parsed = JSON.parse(raw);
@@ -35,6 +36,10 @@ function loadConfig(): { baseUrl?: string; apiKey?: string } {
 			apiKey:
 				typeof parsed.apiKey === 'string' && !PLACEHOLDER(parsed.apiKey)
 					? parsed.apiKey
+					: undefined,
+			model:
+				typeof parsed.model === 'string' && MODEL_IDS.includes(parsed.model)
+					? parsed.model
 					: undefined,
 		};
 	} catch {
@@ -55,6 +60,24 @@ const CONFIG_SKELETON = JSON.stringify(
 const CONFIG = loadConfig();
 const BASE_URL = CONFIG.baseUrl ?? process.env.CLIPROXY_BASE_URL ?? 'http://100.111.17.56:8317/v1';
 const API_KEY = CONFIG.apiKey ?? process.env.CLIPROXY_API_KEY ?? '';
+const PREF_MODEL = CONFIG.model ?? 'cliproxy-gpt-5.6-sol';
+
+// Persist the preferred model into cliproxy.json (keeps baseUrl/apiKey).
+function persistPrefModel(modelId: string): void {
+	try {
+		const parsed = (() => {
+			try {
+				return JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+			} catch {
+				return {};
+			}
+		})() as Record<string, unknown>;
+		parsed[PREF_MODEL_KEY] = modelId;
+		writeFileSync(CONFIG_PATH, JSON.stringify(parsed, null, 2), 'utf8');
+	} catch {
+		// best-effort
+	}
+}
 
 const MODELS = [
 	{ id: 'cliproxy-gpt-5.6-sol', name: 'GPT-5.6 Sol (CLIProxyAPI)' },
@@ -66,6 +89,8 @@ const MODELS = [
 	{ id: 'cliproxy-gpt-5.3-codex-spark', name: 'GPT-5.3 Codex Spark (CLIProxyAPI)' },
 	{ id: 'cliproxy-codex-auto-review', name: 'Codex Auto Review (CLIProxyAPI)' },
 ];
+
+const MODEL_IDS = MODELS.map((m) => m.id);
 
 const normalizeModel = (model: string): string => {
 	if (model.startsWith('cliproxy-')) return model.slice('cliproxy-'.length);
@@ -236,28 +261,67 @@ export default function (cmd?: any): any {
 		}
 		cmd.addCommand({
 			name: 'cliproxy',
-			description: 'Show CLIProxyAPI provider status',
-			handler: () => ({
-				message: `CLIProxyAPI provider registered. Config: ${CONFIG_PATH}. Base: ${BASE_URL}. Models: ${MODELS.length}. Key: ${API_KEY ? 'set' : 'NOT set'}`,
-			}),
+			description: 'CLIProxyAPI provider status / model selector',
+			handler: ({ args, ui }) => {
+				const sub = (args ?? '').trim();
+				if (sub === 'model' || sub === 'm') {
+					// Selector de modelos (mismo modal que el picker SSH).
+					// ui.select devuelve el objeto de la opción elegida y solo
+					// propaga label/description — por eso el id va en el label.
+					return ui.select({
+						title: 'CLIProxyAPI model',
+						options: MODELS.map((m) => ({
+							label: m.id,
+							description: m.name,
+						})),
+					}).then((selected: any) => {
+						const value = selected?.label;
+						if (!value) return { message: 'Cancelado.' };
+						cmd.setModel?.(value);
+						persistPrefModel(value);
+						return {
+							message: `Modelo cambiado a ${value}. Aplica al próximo turno.`,
+						};
+					});
+				}
+				return {
+					message: `CLIProxyAPI provider. Preferido: ${PREF_MODEL}. Base: ${BASE_URL}. Key: ${API_KEY ? 'set' : 'NOT set'}. Uso: /cliproxy model`,
+				};
+			},
 		});
-		// Force the session model to a cliproxy model. Factory-time setModel is buffered
-		// pre-bind and the TUI restores the previously selected session model (e.g.
-		// deepseek) after bind - so it wins. onSessionStart fires AFTER the host binds
-		// (source: 'startup' | 'resume'), so setModel here lands after that restore and
-		// actually sticks.
+
+		// Muestra en el feed el modelo REAL que usa cada turno (el banner puede
+		// mostrar el modelo del catálogo aunque el turno use cliproxy).
+		let lastModel = PREF_MODEL;
+		cmd.addRenderer('cliproxy-model', (data: { model: string }) => [
+			`[cliproxy] modelo del turno: ${data.model}`,
+		]);
+		cmd.on('model_request_start', (ev: any) => {
+			const model = ev?.model;
+			if (typeof model === 'string' && model.startsWith('cliproxy-')) {
+				if (model !== lastModel) {
+					lastModel = model;
+					cmd.showEntry('cliproxy-model', { model });
+				}
+			}
+		});
+
+		// Fuerza el modelo de sesión al preferido. Factory-time setModel es buffered
+		// pre-bind y el TUI restaura el modelo de sesión anterior (p.ej. deepseek)
+		// después del bind. onSessionStart dispara DESPUÉS del bind, así que aquí
+		// el setModel sí gana y aplica al turno siguiente.
 		cmd.hooks({
 			onSessionStart: () => {
 				try {
-					cmd.setModel?.('cliproxy-gpt-5.6-sol');
+					cmd.setModel?.(PREF_MODEL);
 				} catch {
 					// best-effort
 				}
 			},
 		});
-		// Also apply at factory time for headless runs, where bind order differs.
+		// También en factory para headless, donde el orden del bind difiere.
 		try {
-			cmd.setModel?.('cliproxy-gpt-5.6-sol');
+			cmd.setModel?.(PREF_MODEL);
 		} catch {
 			// best-effort
 		}
