@@ -266,8 +266,8 @@ export default function (cmd?: any): any {
 				const sub = (args ?? '').trim();
 				if (sub === 'model' || sub === 'm') {
 					// Selector de modelos (mismo modal que el picker SSH).
-					// ui.select devuelve el objeto de la opción elegida y solo
-					// propaga label/description — por eso el id va en el label.
+					// ui.select devuelve el LABEL (string) de la opción elegida, o
+					// undefined si se cancela — por eso el id va en el label.
 					return ui.select({
 						title: 'CLIProxyAPI model',
 						options: MODELS.map((m) => ({
@@ -275,7 +275,7 @@ export default function (cmd?: any): any {
 							description: m.name,
 						})),
 					}).then((selected: any) => {
-						const value = selected?.label;
+						const value = typeof selected === 'string' ? selected : undefined;
 						if (!value) return { message: 'Cancelado.' };
 						cmd.setModel?.(value);
 						persistPrefModel(value);
