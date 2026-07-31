@@ -1,6 +1,7 @@
 {
   "name": "cliproxy-provider",
   "version": "1.0.0",
+  "type": "module",
   "description": "Command Code provider mod for CLIProxyAPI (OpenAI-compatible). GPT-5.6 Sol/Terra/Luna via a direct transport.",
   "license": "MIT",
   "commandcode": {

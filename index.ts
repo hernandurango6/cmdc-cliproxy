@@ -3,16 +3,21 @@
 // DUAL MODE: this same file works two ways:
 //  1. As a MOD (auto-loaded from ~/.commandcode/mods/ or via `cmd mods add`):
 //     the default export is called with `cmd`, and it calls cmd.addProvider(module).
+//     It ALSO self-bootstraps: writes its own path into ~/.commandcode/settings.json
+//     ("providers.cliproxy.module") so the provider loads via config on the next
+//     start/reload — that is what actually makes the models selectable.
 //  2. As a CONFIG provider (settings.json "providers" entry): the loader calls the
 //     default export with NO args, so it returns the ProviderModule object.
 //
 // Config: reads ~/.commandcode/cliproxy.json for { baseUrl, apiKey }.
 //   Falls back to CLIPROXY_BASE_URL / CLIPROXY_API_KEY env vars, then built-in defaults.
 import { homedir } from 'node:os';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const CONFIG_PATH = join(homedir(), '.commandcode', 'cliproxy.json');
+const SETTINGS_PATH = join(homedir(), '.commandcode', 'settings.json');
 
 function loadConfig(): { baseUrl?: string; apiKey?: string } {
 	try {
@@ -180,6 +185,38 @@ export default function (cmd?: any): any {
 	const module = buildProviderModule();
 	if (cmd?.addProvider) {
 		cmd.addProvider(module);
+		// Self-bootstrap: make this provider load via config (the seam that actually
+		// feeds the model registry) on the next start/reload.
+		try {
+			const selfPath = fileURLToPath(import.meta.url).replace(/\\/g, '/');
+			const ccDir = join(homedir(), '.commandcode');
+			if (!existsSync(ccDir)) mkdirSync(ccDir, { recursive: true });
+			if (!existsSync(CONFIG_PATH)) {
+				// Seed a placeholder the user can fill in; provider still works via env.
+				writeFileSync(
+					CONFIG_PATH,
+					JSON.stringify({ baseUrl: BASE_URL, apiKey: API_KEY }, null, 2),
+					'utf8',
+				);
+			}
+			let settings: Record<string, any> = {};
+			if (existsSync(SETTINGS_PATH)) {
+				settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf8'));
+			}
+			const providers = (settings.providers ?? {}) as Record<string, any>;
+			const changed =
+				providers.cliproxy?.module !== selfPath || settings.model === undefined;
+			providers.cliproxy = { module: selfPath };
+			settings.providers = providers;
+			if (settings.model === undefined) {
+				settings.model = 'cliproxy-gpt-5.6-sol';
+			}
+			if (changed) {
+				writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
+			}
+		} catch {
+			// Bootstrap is best-effort; the mod still registers via addProvider.
+		}
 		cmd.addCommand({
 			name: 'cliproxy',
 			description: 'Show CLIProxyAPI provider status',

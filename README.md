@@ -20,27 +20,36 @@ proxy's models (GPT-5.6 Sol / Terra / Luna, etc.) inside Command Code through an
 
 ## Install on a new machine
 
+**Automatic (recommended) — as a mod from a git repo:**
+
+```bash
+cmd mods add <owner>/cliproxy-provider
+```
+
+On first load, the mod self-bootstraps: it writes its own path into
+`~/.commandcode/settings.json` (`providers.cliproxy.module`) and sets
+`model: cliproxy-gpt-5.6-sol`, so the provider becomes selectable after the next
+`/reload`. Only the API key needs to be provided per machine:
+
 ```powershell
-# 1. Clone/copy this folder to the machine, then:
+# create ~/.commandcode/cliproxy.json with your key (and baseUrl if not default)
+@'{ "baseUrl": "http://100.111.17.56:8317/v1", "apiKey": "your-key" }'@ |
+  Set-Content "$HOME\.commandcode\cliproxy.json"
+```
+
+or via env vars `CLIPROXY_BASE_URL` / `CLIPROXY_API_KEY`.
+
+**Scripted (alternative) — from a local folder:**
+
+```powershell
 cd cliproxy-provider
-
-# 2. Put your real URL + key in cliproxy.json (copy from the example), OR:
-Copy-Item cliproxy.example.json cliproxy.json
-#    ...then edit cliproxy.json
-
-# 3. Run the installer:
-.\install.ps1
+.\install.ps1                       # uses cliproxy.json / cliproxy.example.json, or prompts
+.\install.ps1 -BaseUrl http://100.111.17.56:8317/v1 -ApiKey fff75d...   # direct
 ```
 
-Or pass the values directly (no config file needed):
-
-```powershell
-.\install.ps1 -BaseUrl http://100.111.17.56:8317/v1 -ApiKey fff75d...
-```
-
-The installer copies the provider to `~/.commandcode/mods/`, writes `~/.commandcode/cliproxy.json`,
-and merges the `providers` + `model` keys into `~/.commandcode/settings.json` **without touching**
-your existing settings.
+The installer copies the provider to `~/.commandcode/mods/`, writes
+`~/.commandcode/cliproxy.json`, and merges the `providers` + `model` keys into
+`~/.commandcode/settings.json` **without touching** your existing settings.
 
 Then restart Command Code (or `/reload`). Check it registered:
 
