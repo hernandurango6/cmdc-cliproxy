@@ -173,8 +173,18 @@ function buildProviderModule() {
 					}
 					const data = await res.json();
 					const choice = data.choices?.[0];
+					const reasoningText = choice?.message?.reasoning_content ?? '';
 					const text =
-						choice?.message?.content ?? choice?.message?.reasoning_content ?? '';
+						choice?.message?.content ?? reasoningText ?? '';
+					// Emit streaming deltas so the harness/TUI paint the response live
+					// and close the turn (text + token usage). Without these, the
+					// response lands in the transcript but never renders until reload.
+					if (reasoningText) {
+						req.onThinkingStart?.();
+						req.onThinkingDelta?.(reasoningText);
+						req.onThinkingEnd?.(reasoningText);
+					}
+					if (text) req.onTextDelta?.(String(text));
 					return {
 						content: [{ type: 'text', text: String(text) }],
 						stopReason: choice?.finish_reason === 'stop' ? 'end_turn' : 'tool_use',
