@@ -435,13 +435,19 @@ export default function (cmd?: any): any {
 			}
 		});
 
-		// Fuerza el modelo de sesión al preferido (id cliproxy-*). Necesario en
-		// headless: sin este setModel, el --model gpt-5.6-* del CLI (override) hace
-		// que el harness valide el id contra el plan del gateway y aborte con 403
-		// MODEL_NOT_IN_PLAN antes de llamar al provider. En el TUI no pisa el
-		// --model del arranque (el override manda para el banner/effort).
+		// Forzar el modelo de sesión al preferido SOLO en headless (sin TTY):
+		// en headless, un `--model gpt-5.6-*` del CLI (override) hace que el
+		// harness valide el id contra el plan del gateway y aborte con 403
+		// MODEL_NOT_IN_PLAN antes de llamar al provider — pisar el override con
+		// cliproxy-* evita eso y el turno va al proxy.
+		// En el TUI NO se fuerza: el `--model gpt-5.6-*` del arranque queda activo
+		// en runtime (banner, /effort, subagentes heredan un id de catálogo y
+		// enrutan al proxy). Forzarlo ahí pisa el override y rompe los subagentes
+		// (el id cliproxy-* no pasa la validación describeUnknownSubagentModel).
+		const isTui = Boolean(process.stdout.isTTY);
 		cmd.hooks({
 			onSessionStart: () => {
+				if (isTui) return;
 				try {
 					cmd.setModel?.(PREF_MODEL);
 				} catch {
@@ -449,11 +455,13 @@ export default function (cmd?: any): any {
 				}
 			},
 		});
-		// También en factory para headless, donde el orden del bind difiere.
-		try {
-			cmd.setModel?.(PREF_MODEL);
-		} catch {
-			// best-effort
+		// En factory también, para headless (el orden del bind difiere).
+		if (!isTui) {
+			try {
+				cmd.setModel?.(PREF_MODEL);
+			} catch {
+				// best-effort
+			}
 		}
 	}
 	return module;
