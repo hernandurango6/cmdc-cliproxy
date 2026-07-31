@@ -240,6 +240,14 @@ export default function (cmd?: any): any {
 				message: `CLIProxyAPI provider registered. Config: ${CONFIG_PATH}. Base: ${BASE_URL}. Models: ${MODELS.length}. Key: ${API_KEY ? 'set' : 'NOT set'}`,
 			}),
 		});
+		// Force the session model to a cliproxy model at bind time. The session model
+		// (setSessionModel) overrides settings.model, so without this the interactive
+		// session stays on the default catalog model even though the provider is loaded.
+		try {
+			cmd.setModel?.('cliproxy-gpt-5.6-sol');
+		} catch {
+			// best-effort
+		}
 	}
 	return module;
 }
