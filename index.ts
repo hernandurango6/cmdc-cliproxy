@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 const CONFIG_PATH = join(homedir(), '.commandcode', 'cliproxy.json');
 const SETTINGS_PATH = join(homedir(), '.commandcode', 'settings.json');
 const PREF_MODEL_KEY = 'model'; // in cliproxy.json — the user's preferred cliproxy model
+const PREF_EFFORT_KEY = 'effort'; // in cliproxy.json — preferred reasoning effort
 
 const MODELS = [
 	{ id: 'cliproxy-gpt-5.6-sol', name: 'GPT-5.6 Sol (CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
@@ -37,7 +38,10 @@ const MODEL_IDS = MODELS.map((m) => m.id);
 const PLACEHOLDER = (s: string | undefined) =>
 	!s || s.startsWith('YOUR_') || s === '';
 
-function loadConfig(): { baseUrl?: string; apiKey?: string; model?: string } {
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+type Effort = (typeof EFFORTS)[number];
+
+function loadConfig(): { baseUrl?: string; apiKey?: string; model?: string; effort?: Effort } {
 	try {
 		const raw = readFileSync(CONFIG_PATH, 'utf8');
 		const parsed = JSON.parse(raw);
@@ -53,6 +57,10 @@ function loadConfig(): { baseUrl?: string; apiKey?: string; model?: string } {
 			model:
 				typeof parsed.model === 'string' && MODEL_IDS.includes(parsed.model)
 					? parsed.model
+					: undefined,
+			effort:
+				typeof parsed.effort === 'string' && (EFFORTS as readonly string[]).includes(parsed.effort)
+					? (parsed.effort as Effort)
 					: undefined,
 		};
 	} catch {
@@ -74,9 +82,10 @@ const CONFIG = loadConfig();
 const BASE_URL = CONFIG.baseUrl ?? process.env.CLIPROXY_BASE_URL ?? 'http://100.111.17.56:8317/v1';
 const API_KEY = CONFIG.apiKey ?? process.env.CLIPROXY_API_KEY ?? '';
 const PREF_MODEL = CONFIG.model ?? 'cliproxy-gpt-5.6-sol';
+const PREF_EFFORT = CONFIG.effort ?? 'high';
 
-// Persist the preferred model into cliproxy.json (keeps baseUrl/apiKey).
-function persistPrefModel(modelId: string): void {
+// Persist a key into cliproxy.json (keeps baseUrl/apiKey/other keys).
+function persistPref(key: string, value: unknown): void {
 	try {
 		const parsed = (() => {
 			try {
@@ -85,7 +94,7 @@ function persistPrefModel(modelId: string): void {
 				return {};
 			}
 		})() as Record<string, unknown>;
-		parsed[PREF_MODEL_KEY] = modelId;
+		parsed[key] = value;
 		writeFileSync(CONFIG_PATH, JSON.stringify(parsed, null, 2), 'utf8');
 	} catch {
 		// best-effort
@@ -163,7 +172,7 @@ function buildProviderModule() {
 						body: JSON.stringify({
 							model,
 							messages,
-							...(reasoning ? { reasoning_effort: reasoning } : {}),
+							...(reasoning ? { reasoning_effort: reasoning } : { reasoning_effort: PREF_EFFORT }),
 							...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
 							...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
 						}),
@@ -290,14 +299,30 @@ export default function (cmd?: any): any {
 						const value = typeof selected === 'string' ? selected : undefined;
 						if (!value) return { message: 'Cancelado.' };
 						cmd.setModel?.(value);
-						persistPrefModel(value);
+						persistPref(PREF_MODEL_KEY, value);
 						return {
 							message: `Modelo cambiado a ${value}. Aplica al próximo turno.`,
 						};
 					});
 				}
+				if (sub === 'effort' || sub === 'e') {
+					// Selector de reasoning effort (los 5 niveles que el proxy acepta).
+					return ui.select({
+						title: 'CLIProxyAPI reasoning effort',
+						options: EFFORTS.map((e) => ({
+							label: e,
+						})),
+					}).then((selected: any) => {
+						const value = typeof selected === 'string' && (EFFORTS as readonly string[]).includes(selected) ? selected : undefined;
+						if (!value) return { message: 'Cancelado.' };
+						persistPref(PREF_EFFORT_KEY, value);
+						return {
+							message: `Effort cambiado a ${value}. Aplica al próximo turno.`,
+						};
+					});
+				}
 				return {
-					message: `CLIProxyAPI provider. Preferido: ${PREF_MODEL}. Base: ${BASE_URL}. Key: ${API_KEY ? 'set' : 'NOT set'}. Uso: /cliproxy model`,
+					message: `CLIProxyAPI provider. Modelo: ${PREF_MODEL}. Effort: ${PREF_EFFORT}. Base: ${BASE_URL}. Key: ${API_KEY ? 'set' : 'NOT set'}. Uso: /cliproxy model | /cliproxy effort`,
 				};
 			},
 		});
