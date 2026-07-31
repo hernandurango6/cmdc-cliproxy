@@ -19,18 +19,38 @@ import { fileURLToPath } from 'node:url';
 const CONFIG_PATH = join(homedir(), '.commandcode', 'cliproxy.json');
 const SETTINGS_PATH = join(homedir(), '.commandcode', 'settings.json');
 
+// Placeholders in cliproxy.json mean "not configured yet" — fall back to env/default.
+const PLACEHOLDER = (s: string | undefined) =>
+	!s || s.startsWith('YOUR_') || s === '';
+
 function loadConfig(): { baseUrl?: string; apiKey?: string } {
 	try {
 		const raw = readFileSync(CONFIG_PATH, 'utf8');
 		const parsed = JSON.parse(raw);
 		return {
-			baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : undefined,
-			apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : undefined,
+			baseUrl:
+				typeof parsed.baseUrl === 'string' && !PLACEHOLDER(parsed.baseUrl)
+					? parsed.baseUrl
+					: undefined,
+			apiKey:
+				typeof parsed.apiKey === 'string' && !PLACEHOLDER(parsed.apiKey)
+					? parsed.apiKey
+					: undefined,
 		};
 	} catch {
 		return {};
 	}
 }
+
+// The empty cliproxy.json skeleton created when none exists — paste URL + key here.
+const CONFIG_SKELETON = JSON.stringify(
+	{
+		baseUrl: 'YOUR_BASE_URL_HERE',
+		apiKey: 'YOUR_API_KEY_HERE',
+	},
+	null,
+	2,
+);
 
 const CONFIG = loadConfig();
 const BASE_URL = CONFIG.baseUrl ?? process.env.CLIPROXY_BASE_URL ?? 'http://100.111.17.56:8317/v1';
@@ -192,12 +212,8 @@ export default function (cmd?: any): any {
 			const ccDir = join(homedir(), '.commandcode');
 			if (!existsSync(ccDir)) mkdirSync(ccDir, { recursive: true });
 			if (!existsSync(CONFIG_PATH)) {
-				// Seed a placeholder the user can fill in; provider still works via env.
-				writeFileSync(
-					CONFIG_PATH,
-					JSON.stringify({ baseUrl: BASE_URL, apiKey: API_KEY }, null, 2),
-					'utf8',
-				);
+				// Create the skeleton so the user just pastes URL + key.
+				writeFileSync(CONFIG_PATH, CONFIG_SKELETON, 'utf8');
 			}
 			let settings: Record<string, any> = {};
 			if (existsSync(SETTINGS_PATH)) {
