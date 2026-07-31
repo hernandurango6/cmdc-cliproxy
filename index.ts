@@ -32,6 +32,21 @@ const MODELS = [
 	{ id: 'cliproxy-codex-auto-review', name: 'Codex Auto Review (CLIProxyAPI)', efforts: ['low', 'medium', 'high'] },
 ];
 
+// Reclamar también los ids del catálogo de Command Code (gpt-5.6-sol/terra/luna, etc.)
+// para que headless/--model los enrute a este provider direct en vez del built-in
+// gateway (que bloquea por plan y va al backend de Command Code). Verificado con
+// logs del proxy: los requests --model gpt-5.6-* llegan al proxy. En el TUI el
+// picker sigue mostrando los ids cliproxy-* vía /cliproxy model.
+const CATALOG_IDS: { id: string; name: string; efforts?: string[] }[] = [
+	{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+	{ id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+	{ id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+	{ id: 'gpt-5.5', name: 'GPT-5.5 (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh'] },
+	{ id: 'gpt-5.4', name: 'GPT-5.4 (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh'] },
+	{ id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini (vía CLIProxyAPI)', efforts: ['low', 'medium', 'high'] },
+];
+const ALL_MODELS = [...MODELS, ...CATALOG_IDS];
+
 const MODEL_IDS = MODELS.map((m) => m.id);
 
 // Placeholders in cliproxy.json mean "not configured yet" — fall back to env/default.
@@ -126,7 +141,7 @@ function buildProviderModule() {
 	return {
 		id: 'cliproxy',
 		displayName: 'CLIProxyAPI',
-		models: MODELS,
+		models: ALL_MODELS,
 		transport: {
 			kind: 'direct',
 			stream: async (req: any) => {
@@ -241,7 +256,7 @@ function buildProviderModule() {
 		hooks: {
 			onResponse: ({ response }: { response: any }) => response,
 		},
-		matchesModelId: (id: string) => MODELS.some((m) => m.id === id),
+		matchesModelId: (id: string) => ALL_MODELS.some((m) => m.id === id),
 	};
 }
 
