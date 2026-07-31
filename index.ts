@@ -156,11 +156,12 @@ function buildProviderModule() {
 						rawFinishReason: choice?.finish_reason ?? 'stop',
 						usage: data.usage
 							? {
-									promptTokens: data.usage.prompt_tokens ?? 0,
-									completionTokens: data.usage.completion_tokens ?? 0,
-									totalTokens: data.usage.total_tokens ?? 0,
+									inputTokens: data.usage.prompt_tokens ?? 0,
+									outputTokens: data.usage.completion_tokens ?? 0,
+									cacheReadTokens: 0,
+									cacheWriteTokens: 0,
 							  }
-							: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+							: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
 						raw: data,
 					};
 				} finally {
