@@ -21,14 +21,14 @@ const SETTINGS_PATH = join(homedir(), '.commandcode', 'settings.json');
 const PREF_MODEL_KEY = 'model'; // in cliproxy.json — the user's preferred cliproxy model
 
 const MODELS = [
-	{ id: 'cliproxy-gpt-5.6-sol', name: 'GPT-5.6 Sol (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.6-terra', name: 'GPT-5.6 Terra (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.6-luna', name: 'GPT-5.6 Luna (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.5', name: 'GPT-5.5 (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.4', name: 'GPT-5.4 (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.4-mini', name: 'GPT-5.4 Mini (CLIProxyAPI)' },
-	{ id: 'cliproxy-gpt-5.3-codex-spark', name: 'GPT-5.3 Codex Spark (CLIProxyAPI)' },
-	{ id: 'cliproxy-codex-auto-review', name: 'Codex Auto Review (CLIProxyAPI)' },
+	{ id: 'cliproxy-gpt-5.6-sol', name: 'GPT-5.6 Sol (CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+	{ id: 'cliproxy-gpt-5.6-terra', name: 'GPT-5.6 Terra (CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+	{ id: 'cliproxy-gpt-5.6-luna', name: 'GPT-5.6 Luna (CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+	{ id: 'cliproxy-gpt-5.5', name: 'GPT-5.5 (CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh'] },
+	{ id: 'cliproxy-gpt-5.4', name: 'GPT-5.4 (CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh'] },
+	{ id: 'cliproxy-gpt-5.4-mini', name: 'GPT-5.4 Mini (CLIProxyAPI)', efforts: ['low', 'medium', 'high'] },
+	{ id: 'cliproxy-gpt-5.3-codex-spark', name: 'GPT-5.3 Codex Spark (CLIProxyAPI)', efforts: ['low', 'medium', 'high', 'xhigh'] },
+	{ id: 'cliproxy-codex-auto-review', name: 'Codex Auto Review (CLIProxyAPI)', efforts: ['low', 'medium', 'high'] },
 ];
 
 const MODEL_IDS = MODELS.map((m) => m.id);
@@ -102,13 +102,15 @@ const normalizeModel = (model: string): string => {
 	return map[model] ?? model;
 };
 
-// OpenAI-compatible reasoning_effort only accepts low/medium/high.
+// OpenAI-compatible reasoning_effort — passthrough. Command Code's catalog gives
+// gpt-5.6-sol/terra/luna: low, medium, high, xhigh, max. The proxy decides what it
+// accepts; pass the value verbatim so the strongest supported effort is used.
 const EFFORT_MAP: Record<string, string> = {
 	low: 'low',
 	medium: 'medium',
 	high: 'high',
-	xhigh: 'high',
-	max: 'high',
+	xhigh: 'xhigh',
+	max: 'max',
 };
 
 function buildProviderModule() {
