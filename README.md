@@ -1,138 +1,224 @@
 # cliproxy-provider
 
-Command Code provider for [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — exposes your
-proxy's models (GPT-5.6 Sol / Terra / Luna, etc.) inside Command Code through an OpenAI-compatible
-`direct` transport, with no Command Code Pro plan required.
+Mod de [Command Code](https://commandcode.ai/) para usar [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) como un provider OpenAI-compatible.
 
-## What it does
+El mod registra un provider `direct`, envía las conversaciones a `/v1/chat/completions` y soporta texto, razonamiento, tools y streaming SSE.
 
-- Registers a `cliproxy` provider with Command Code (transport `direct`).
-- Reads URL + API key from `~/.commandcode/cliproxy.json` (no env vars needed).
-- Self-bootstraps on first load: writes its own path into `~/.commandcode/settings.json`
-  (`providers.cliproxy.module`) and sets `model: cliproxy-gpt-5.6-sol`.
-- **TUI commands** for switching model and reasoning effort.
-- **Claims the catalog ids** (`gpt-5.6-sol/terra/luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`) so
-  `--model gpt-5.6-luna` routes to your proxy (verified against proxy request logs), bypassing
-  the built-in gateway and its plan gating.
+## Estado actual
 
-## Files
+- Modelos disponibles mediante IDs propios `cliproxy-*`.
+- Streaming SSE real con fallback a respuestas JSON.
+- Conversión de tools y `tool_result` al formato OpenAI.
+- Cancelación del request enlazada al `AbortSignal` de Command Code.
+- Selección de modelo y reasoning effort desde `/cliproxy`.
+- No modifica `settings.json`.
+- No reclama IDs del catálogo de Command Code.
 
-| File | Purpose |
-|---|---|
-| `index.ts` | The provider (dual-mode: works as a mod or as a config provider). |
-| `install.ps1` | One-command installer for Windows. |
-| `cliproxy.example.json` | Template for URL + API key. |
+> Los mods de Command Code son experimentales y se ejecutan sin sandbox. Instala únicamente código que confíes.
 
-## Install on a new machine
+## Modelos
 
-**Automatic (recommended) — as a mod from a git repo:**
+El mod ofrece estos IDs:
+
+- `cliproxy-gpt-5.6-sol`
+- `cliproxy-gpt-5.6-terra`
+- `cliproxy-gpt-5.6-luna`
+- `cliproxy-gpt-5.5`
+- `cliproxy-gpt-5.4`
+- `cliproxy-gpt-5.4-mini`
+- `cliproxy-codex-auto-review`
+
+CLIProxyAPI actualmente puede resolver `codex-auto-review` hacia GPT-5.4; el nombre del modelo efectivo puede diferir del ID solicitado.
+
+`gpt-5.3-codex-spark` no se anuncia por defecto porque el endpoint probado respondió `auth_unavailable` para ese modelo.
+
+## Configuración
+
+El mod lee:
+
+```text
+~/.commandcode/cliproxy.json
+```
+
+Ejemplo:
+
+```json
+{
+  "baseUrl": "http://127.0.0.1:8317/v1",
+  "apiKey": "your-api-key",
+  "model": "cliproxy-gpt-5.6-luna",
+  "effort": "high"
+}
+```
+
+También acepta:
+
+```text
+CLIPROXY_BASE_URL
+CLIPROXY_API_KEY
+```
+
+La precedencia es:
+
+1. `cliproxy.json`.
+2. Variables de entorno.
+3. `http://127.0.0.1:8317/v1` para la URL y ningún token para la API key.
+
+El valor de `baseUrl` puede terminar en `/`; el mod lo normaliza antes de añadir `/chat/completions`.
+
+## Instalación recomendada
+
+### Como paquete git
 
 ```bash
-cmd mods add <owner>/cliproxy-provider
+cmd mods add -g hernandurango6/cmdc-cliproxy
 ```
 
-On first load, the mod self-bootstraps: it writes its own path into
-`~/.commandcode/settings.json` (`providers.cliproxy.module`) and creates
-`~/.commandcode/cliproxy.json` with paste-ready placeholders. Only the API key (and baseUrl if
-not default) needs to be provided per machine:
+El paquete se descubre como mod en la siguiente sesión. Configura después:
 
 ```powershell
-# ~/.commandcode/cliproxy.json — created automatically on first load; fill the placeholders
-@'{ "baseUrl": "http://100.111.17.56:8317/v1", "apiKey": "your-key" }'@ |
-  Set-Content "$HOME\.commandcode\cliproxy.json"
+@'
+{
+  "baseUrl": "http://127.0.0.1:8317/v1",
+  "apiKey": "your-api-key",
+  "model": "cliproxy-gpt-5.6-luna",
+  "effort": "high"
+}
+'@ | Set-Content "$HOME\.commandcode\cliproxy.json"
 ```
 
-or via env vars `CLIPROXY_BASE_URL` / `CLIPROXY_API_KEY`.
-
-Then restart Command Code (or `/reload`). Check it registered:
+O utiliza variables de entorno:
 
 ```powershell
-cmdc providers --json
+$env:CLIPROXY_BASE_URL = 'http://127.0.0.1:8317/v1'
+$env:CLIPROXY_API_KEY = 'your-api-key'
 ```
 
-**Scripted (alternative) — from a local folder:**
+### Instalador local de Windows
 
 ```powershell
-cd cliproxy-provider
-.\install.ps1                       # uses cliproxy.json / cliproxy.example.json, or prompts
-.\install.ps1 -BaseUrl http://100.111.17.56:8317/v1 -ApiKey fff75d...   # direct
+.\install.ps1 -BaseUrl http://127.0.0.1:8317/v1 -ApiKey your-api-key
 ```
 
-The installer copies the provider to `~/.commandcode/mods/`, writes
-`~/.commandcode/cliproxy.json`, and merges the `providers` + `model` keys into
-`~/.commandcode/settings.json` **without touching** your existing settings.
+El instalador:
 
-## Usage
+1. Copia `index.ts` a `~/.commandcode/mods/cliproxy-provider.ts`.
+2. Crea `~/.commandcode/cliproxy.json` si no existe.
+3. No modifica `~/.commandcode/settings.json`.
+4. Conserva una configuración existente salvo que se use `-Force`.
 
-### Interactive TUI
+Opciones:
 
-**Recommended start — pass the catalog id so the banner and `/effort` work natively:**
+```powershell
+.\install.ps1 -SkipConfig
+.\install.ps1 -Force -BaseUrl http://127.0.0.1:8317/v1 -ApiKey new-key
+```
+
+## Uso
+
+### Inicio
+
+En Command Code 1.7.0, el CLI valida `--model` antes de que el mod pueda registrar sus IDs. Por eso esto puede ser rechazado:
+
+```bash
+cmdc --model cliproxy-gpt-5.6-luna
+```
+
+El mod no reclama IDs del catálogo como `gpt-5.6-luna`. En su lugar, inicia normalmente:
+
+```bash
+cmdc
+```
+
+y el mod fuerza el modelo configurado (`cliproxy-*`) cuando se crea o reanuda la sesión.
+
+También puedes iniciar con un ID de catálogo válido para Command Code, pero el mod lo reemplazará por el modelo `cliproxy-*` configurado en `cliproxy.json`:
 
 ```bash
 cmdc --model gpt-5.6-luna
 ```
 
-This shows the real model in the header (`# models: gpt-5.6-luna · taste-1`), makes the native
-`/effort` selector work (the catalog knows `gpt-5.6-*` supports `low/medium/high/xhigh/max`), and
-the turns still route to your proxy.
+El ID mostrado en el banner puede no coincidir con el modelo efectivo del provider.
 
-| Command | What it does |
+### Comandos
+
+| Comando | Función |
 |---|---|
-| `/cliproxy model` | Opens a picker with all cliproxy models; selection applies next turn and persists as the preferred model. |
-| `/cliproxy effort` | Opens a picker with `low` / `medium` / `high` / `xhigh` / `max`; selection is sent to the proxy as `reasoning_effort` on every request and persists. |
-| `/effort` (native) | Works when the session model is a catalog id (e.g. started with `--model gpt-5.6-luna`); the chosen effort is passed through to the proxy. |
-| `/cliproxy` | Status: preferred model, effort, base URL, whether the key is set. |
+| `/cliproxy` | Muestra provider, modelo, effort, URL y si existe una key. |
+| `/cliproxy model` | Selecciona un modelo CLIProxyAPI y lo aplica al siguiente turno. |
+| `/cliproxy effort` | Selecciona `low`, `medium`, `high`, `xhigh` o `max` y lo aplica en vivo. |
 
-The preferred model is forced at session start (`onSessionStart` → `setModel`), so the session
-runs on your proxy instead of the default catalog model. The feed also shows a
-`[cliproxy] modelo del turno: …` row whenever the per-turn model changes, since the TUI banner
-keeps showing the catalog model.
+Los cambios de modelo y effort se guardan en `cliproxy.json` y también llaman a `cmd.setModel`/`cmd.setEffort`, por lo que no requieren reiniciar la sesión.
 
-### Headless / scripts
+### Headless
 
-The provider also claims the catalog ids, so the CLI accepts them directly:
+Para una prueba headless, carga el archivo explícitamente y usa un modelo de catálogo válido; el mod lo reemplazará durante el arranque:
 
 ```bash
-cmdc -p "hola" --model gpt-5.6-luna
-cmdc -p "explain this diff" --model gpt-5.6-sol
+cmdc -p "Respond with exactly OK." \
+  --mod ./index.ts \
+  --model gpt-5.6-luna \
+  --max-turns 1
 ```
 
-These route to your proxy (no Pro plan needed). `--model cliproxy-gpt-5.6-*` is NOT accepted
-(`--model` only accepts catalog ids); use `--model gpt-5.6-*` or the TUI commands instead.
+La validación inicial de `--model` ocurre antes de la ejecución del mod; `cliproxy-*` no es un valor válido para esa opción en Command Code 1.7.0.
 
-## Available models
+## Tools y streaming
 
-`cliproxy-gpt-5.6-sol`, `cliproxy-gpt-5.6-terra`, `cliproxy-gpt-5.6-luna`, `cliproxy-gpt-5.5`,
-`cliproxy-gpt-5.4`, `cliproxy-gpt-5.4-mini`, `cliproxy-gpt-5.3-codex-spark`, `cliproxy-codex-auto-review`.
-
-Set the default via `model` in `~/.commandcode/settings.json`:
+El mod convierte las tools de Command Code a:
 
 ```json
-{ "model": "cliproxy-gpt-5.6-terra", "providers": { "cliproxy": { "module": "..." } } }
+{
+  "type": "function",
+  "function": {
+    "name": "...",
+    "description": "...",
+    "parameters": {}
+  }
+}
 ```
 
-or via `~/.commandcode/cliproxy.json`:
+Las respuestas SSE se procesan incrementalmente. Se acumulan llamadas de tools fragmentadas por índice y se convierten a bloques `tool_use`. Los resultados de tools se envían como mensajes OpenAI `role: "tool"` con `tool_call_id`.
 
-```json
-{ "baseUrl": "http://100.111.17.56:8317/v1", "apiKey": "your-key", "model": "cliproxy-gpt-5.6-luna", "effort": "max" }
+Si el servidor no devuelve `text/event-stream`, se acepta una respuesta JSON compatible.
+
+## Limitaciones conocidas
+
+- Los subagentes de Command Code validan su modelo contra el catálogo integrado; por eso no pueden seleccionar directamente un ID `cliproxy-*`.
+- El banner puede seguir mostrando un modelo de catálogo aunque la petición efectiva use CLIProxyAPI.
+- El backend de CLIProxyAPI determina qué modelos están realmente autorizados.
+- Las imágenes se convierten a `image_url` cuando el bloque incluye una URL o una fuente base64 compatible.
+
+## Verificación
+
+Comprobar que el mod fue descubierto:
+
+```bash
+cmdc mods list
 ```
 
-## Notes
+Debe aparecer el paquete `cmdc-cliproxy` o el archivo `cliproxy-provider`.
 
-- **Config file** (`~/.commandcode/cliproxy.json`): `baseUrl`, `apiKey`, optional `model`
-  (preferred) and `effort`. Placeholders (`YOUR_BASE_URL_HERE` / `YOUR_API_KEY_HERE`) count as
-  "not configured" — env fallbacks keep working until replaced.
-- **Env var fallbacks**: `CLIPROXY_BASE_URL`, `CLIPROXY_API_KEY`.
-- **Effort**: the proxy accepts `low` / `medium` / `high` / `xhigh` / `max` (same set Command Code
-  defines for gpt-5.6); the value is passed through verbatim, default `high`.
-- **Why the catalog ids work**: the provider lists the catalog ids in `models` and
-  `matchesModelId`, so the harness routes those models to this `direct` transport instead of the
-  built-in gateway. Verified with proxy request logs (requests from the local machine hit
-  `/v1/chat/completions`).
-- **Banner caveat**: starting the TUI without `--model` keeps showing the default catalog model
-  (e.g. `deepseek-v4-flash`) in the header even though turns run on your proxy. Start with
-  `cmdc --model gpt-5.6-luna` to show the real model and enable the native `/effort` selector.
+Para una prueba real:
 
-## License
+```bash
+cmdc -p "Respond with exactly OK." \
+  --mod ./index.ts \
+  --model gpt-5.6-luna \
+  --max-turns 1
+```
+
+No uses `cmdc providers --json` para verificar este mod: ese comando lista providers de autenticación integrados, no providers registrados por mods.
+
+## Desarrollo
+
+```bash
+npm install
+npm test
+```
+
+Las pruebas usan mocks locales y no requieren una API key.
+
+## Licencia
 
 MIT

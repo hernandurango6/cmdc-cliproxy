@@ -1,73 +1,81 @@
-# install.ps1 — installs the CLIProxyAPI provider into Command Code on this machine.
-# Usage:  .\install.ps1              (uses ./cliproxy.json or ./cliproxy.example.json)
-#         .\install.ps1 -BaseUrl http://host:port/v1 -ApiKey sk-xxx
-#         .\install.ps1 -SkipConfig  (keep an existing ~/.commandcode/cliproxy.json)
+# install.ps1 — install the CLIProxyAPI mod into Command Code.
 #
-# Does:
-#   1. Copies index.ts -> ~/.commandcode/mods/cliproxy-provider.ts
-#   2. Creates ~/.commandcode/cliproxy.json from cliproxy.json / cliproxy.example.json
-#      (or from -BaseUrl/-ApiKey), unless it already exists and -SkipConfig is set.
-#   3. Merges the "providers" and "model" keys into ~/.commandcode/settings.json,
-#      preserving any existing settings (theme, permissions, etc.).
+# Usage:
+#   .\install.ps1
+#   .\install.ps1 -BaseUrl http://127.0.0.1:8317/v1 -ApiKey sk-xxx
+#   .\install.ps1 -SkipConfig
+#   .\install.ps1 -Force
+#
+# Loose files under ~/.commandcode/mods are discovered automatically by
+# Command Code. This installer therefore never modifies settings.json.
 
 param(
     [string]$BaseUrl,
     [string]$ApiKey,
-    [switch]$SkipConfig
+    [switch]$SkipConfig,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
 
 $homeDir = $env:USERPROFILE
 if (-not $homeDir) { $homeDir = $HOME }
-$ccDir   = Join-Path $homeDir '.commandcode'
+if (-not $homeDir) { throw 'Could not determine the user home directory.' }
+
+$ccDir = Join-Path $homeDir '.commandcode'
 $modsDir = Join-Path $ccDir 'mods'
-$settingsPath = Join-Path $ccDir 'settings.json'
-$configPath   = Join-Path $ccDir 'cliproxy.json'
+$configPath = Join-Path $ccDir 'cliproxy.json'
+$destination = Join-Path $modsDir 'cliproxy-provider.ts'
 
 New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
 
-# 1. Provider file
-$src = Join-Path $PSScriptRoot 'index.ts'
-if (-not (Test-Path $src)) { throw "index.ts not found next to install.ps1 ($src)" }
-Copy-Item $src (Join-Path $modsDir 'cliproxy-provider.ts') -Force
-Write-Host "[1/3] Provider copied to $modsDir\cliproxy-provider.ts"
+# 1. Copy the mod. It is intentionally a loose file so Command Code discovers it.
+$source = Join-Path $PSScriptRoot 'index.ts'
+if (-not (Test-Path $source)) {
+    throw "index.ts not found next to install.ps1 ($source)"
+}
+Copy-Item $source $destination -Force
+Write-Host "[1/2] Provider copied to $destination"
 
-# 2. Config file
-if (-not $SkipConfig) {
-    if (-not $BaseUrl -and -not $ApiKey) {
-        # Prefer a real config in the repo, else the example
-        $repoConfig = Join-Path $PSScriptRoot 'cliproxy.json'
-        $example    = Join-Path $PSScriptRoot 'cliproxy.example.json'
-        $configSrc  = if (Test-Path $repoConfig) { $repoConfig } else { $example }
-        $parsed = Get-Content $configSrc -Raw | ConvertFrom-Json
-        $BaseUrl = if ($BaseUrl) { $BaseUrl } elseif ($parsed.baseUrl) { $parsed.baseUrl } else { '' }
-        $ApiKey  = if ($ApiKey)  { $ApiKey }  elseif ($parsed.apiKey)  { $parsed.apiKey }  else { '' }
-    }
-    if (-not $BaseUrl) { $BaseUrl = Read-Host 'CLIProxyAPI base URL (e.g. http://host:8317/v1)' }
-    if (-not $ApiKey)  { $ApiKey  = Read-Host 'CLIProxyAPI API key' }
-    @{ baseUrl = $BaseUrl; apiKey = $ApiKey } | ConvertTo-Json | Set-Content $configPath -Encoding UTF8
-    Write-Host "[2/3] Config written to $configPath"
+# 2. Create or explicitly replace the private provider configuration.
+if ($SkipConfig) {
+    Write-Host "[2/2] Skipped config (-SkipConfig); keeping $configPath"
+} elseif ((Test-Path $configPath) -and -not $Force) {
+    Write-Host "[2/2] Existing config preserved at $configPath (use -Force to replace it; supplied parameters were ignored)"
 } else {
-    Write-Host "[2/3] Skipped config (-SkipConfig); keeping $configPath"
+    if (-not $BaseUrl -and -not $ApiKey) {
+        $examplePath = Join-Path $PSScriptRoot 'cliproxy.example.json'
+        if (Test-Path $examplePath) {
+            $example = Get-Content $examplePath -Raw | ConvertFrom-Json
+            if ($example.baseUrl -and $example.baseUrl -notlike 'YOUR_*') {
+                $BaseUrl = [string]$example.baseUrl
+            }
+        }
+    }
+
+    if (-not $BaseUrl) {
+        $BaseUrl = Read-Host 'CLIProxyAPI base URL (e.g. http://127.0.0.1:8317/v1)'
+    }
+    if (-not $ApiKey) {
+        $ApiKey = Read-Host 'CLIProxyAPI API key'
+    }
+    if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
+        throw 'A CLIProxyAPI base URL is required.'
+    }
+    if ([string]::IsNullOrWhiteSpace($ApiKey) -or $ApiKey -like 'YOUR_*') {
+        throw 'An actual CLIProxyAPI API key is required; placeholder or empty values are not accepted.'
+    }
+
+    @{
+        baseUrl = $BaseUrl.TrimEnd('/')
+        apiKey = $ApiKey
+        model = 'cliproxy-gpt-5.6-sol'
+        effort = 'high'
+    } | ConvertTo-Json | Set-Content $configPath -Encoding UTF8
+    Write-Host "[2/2] Config written to $configPath"
 }
 
-# 3. Merge into settings.json
-$modulePath = (Join-Path $modsDir 'cliproxy-provider.ts').Replace('\', '/')
-$settings = @{}
-if (Test-Path $settingsPath) {
-    $existing = Get-Content $settingsPath -Raw | ConvertFrom-Json -AsHashtable
-    foreach ($k in $existing.Keys) { $settings[$k] = $existing[$k] }
-}
-$settings['providers'] = @{
-    cliproxy = @{ module = $modulePath }
-}
-if (-not $settings.ContainsKey('model')) {
-    $settings['model'] = 'cliproxy-gpt-5.6-sol'
-}
-$settings | ConvertTo-Json -Depth 6 | Set-Content $settingsPath -Encoding UTF8
-Write-Host "[3/3] settings.json updated (model: $($settings['model']))"
-
-Write-Host ""
-Write-Host "Done. Restart Command Code (or /reload) and the CLIProxyAPI provider is active."
-Write-Host "Available models: cliproxy-gpt-5.6-sol, cliproxy-gpt-5.6-terra, cliproxy-gpt-5.6-luna, ..."
+Write-Host ''
+Write-Host 'Done. Restart Command Code (or use /reload) and the CLIProxyAPI mod will be discovered automatically.'
+Write-Host 'settings.json was not modified.'
+Write-Host 'Available models: cliproxy-gpt-5.6-sol, cliproxy-gpt-5.6-terra, cliproxy-gpt-5.6-luna, ...'

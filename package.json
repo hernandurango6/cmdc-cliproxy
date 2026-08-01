@@ -4,7 +4,17 @@
   "type": "module",
   "description": "Command Code provider mod for CLIProxyAPI (OpenAI-compatible). GPT-5.6 Sol/Terra/Luna via a direct transport.",
   "license": "MIT",
+  "scripts": {
+    "test": "node --import tsx --test test/**/*.test.ts"
+  },
   "commandcode": {
-    "mods": ["./index.ts"]
+    "mods": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
   }
 }
