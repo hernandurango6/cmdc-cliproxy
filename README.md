@@ -2,7 +2,7 @@
 
 Mod de [Command Code](https://commandcode.ai/) para usar [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) como un provider OpenAI-compatible.
 
-El mod registra un provider `direct`, envía las conversaciones a `/v1/chat/completions` y soporta texto, razonamiento, tools y streaming SSE.
+El mod registra el provider `cliproxy` con transporte `direct`, envía las conversaciones a `/v1/chat/completions` y soporta texto, razonamiento, tools y streaming SSE.
 
 ## Estado actual
 
@@ -71,7 +71,7 @@ El valor de `baseUrl` puede terminar en `/`; el mod lo normaliza antes de añadi
 ### Como paquete git
 
 ```bash
-cmd mods add -g hernandurango6/cmdc-cliproxy
+cmdc mods add -g hernandurango6/cmdc-cliproxy
 ```
 
 El paquete se descubre como mod en la siguiente sesión. Configura después:
@@ -118,27 +118,21 @@ Opciones:
 
 ### Inicio
 
-En Command Code 1.7.0, el CLI valida `--model` antes de que el mod pueda registrar sus IDs. Por eso esto puede ser rechazado:
-
-```bash
-cmdc --model cliproxy-gpt-5.6-luna
-```
-
-El mod no reclama IDs del catálogo como `gpt-5.6-luna`. En su lugar, inicia normalmente:
+Inicia Command Code normalmente:
 
 ```bash
 cmdc
 ```
 
-y el mod fuerza el modelo configurado (`cliproxy-*`) cuando se crea o reanuda la sesión.
+El mod aplica el modelo configurado (`cliproxy-*`) cuando se crea o reanuda la sesión. En Command Code 1.7.0, la opción `--model` se valida antes de cargar los mods, por lo que los IDs `cliproxy-*` no pueden usarse directamente con esa opción.
 
-También puedes iniciar con un ID de catálogo válido para Command Code, pero el mod lo reemplazará por el modelo `cliproxy-*` configurado en `cliproxy.json`:
+Para cambiar el modelo durante la sesión, usa:
 
-```bash
-cmdc --model gpt-5.6-luna
+```text
+/cliproxy model
 ```
 
-El ID mostrado en el banner puede no coincidir con el modelo efectivo del provider.
+El ID mostrado en el banner puede no coincidir con el modelo efectivo enviado al provider.
 
 ### Comandos
 
@@ -148,20 +142,30 @@ El ID mostrado en el banner puede no coincidir con el modelo efectivo del provid
 | `/cliproxy model` | Selecciona un modelo CLIProxyAPI y lo aplica al siguiente turno. |
 | `/cliproxy effort` | Selecciona `low`, `medium`, `high`, `xhigh` o `max` y lo aplica en vivo. |
 
-Los cambios de modelo y effort se guardan en `cliproxy.json` y también llaman a `cmd.setModel`/`cmd.setEffort`, por lo que no requieren reiniciar la sesión.
+Los cambios de modelo y effort se guardan en `cliproxy.json` y también llaman a las APIs de sesión `setModel`/`setEffort`, por lo que no requieren reiniciar la sesión.
 
 ### Headless
 
-Para una prueba headless, carga el archivo explícitamente y usa un modelo de catálogo válido; el mod lo reemplazará durante el arranque:
+Para probar una instalación ya configurada, inicia una ejecución sin `--model`; el mod aplica su modelo y esfuerzo configurados:
 
 ```bash
-cmdc -p "Respond with exactly OK." \
-  --mod ./index.ts \
-  --model gpt-5.6-luna \
-  --max-turns 1
+cmdc --no-session --skip-onboarding --max-turns 1 \
+  -p "Respond with exactly OK."
 ```
 
-La validación inicial de `--model` ocurre antes de la ejecución del mod; `cliproxy-*` no es un valor válido para esa opción en Command Code 1.7.0.
+La ejecución requiere `~/.commandcode/cliproxy.json` o las variables `CLIPROXY_BASE_URL` y `CLIPROXY_API_KEY`.
+
+### Prueba local de desarrollo
+
+Si estás trabajando desde el clon del repositorio y no tienes instalado el paquete git, puedes cargar el mod directamente:
+
+```bash
+cmdc --no-session --skip-onboarding --max-turns 1 \
+  -p "Respond with exactly OK." \
+  --mod ./index.ts
+```
+
+No añadas `--model cliproxy-*`: Command Code 1.7.0 valida esa opción antes de ejecutar el mod.
 
 ## Tools y streaming
 
@@ -199,13 +203,11 @@ cmdc mods list
 
 Debe aparecer el paquete `cmdc-cliproxy` o el archivo `cliproxy-provider`.
 
-Para una prueba real:
+Para una prueba real, con `cliproxy.json` o las variables de entorno configuradas:
 
 ```bash
-cmdc -p "Respond with exactly OK." \
-  --mod ./index.ts \
-  --model gpt-5.6-luna \
-  --max-turns 1
+cmdc --no-session --skip-onboarding --max-turns 1 \
+  -p "Respond with exactly OK."
 ```
 
 No uses `cmdc providers --json` para verificar este mod: ese comando lista providers de autenticación integrados, no providers registrados por mods.
