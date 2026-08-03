@@ -10,6 +10,7 @@ El mod registra el provider `cliproxy` con transporte `direct`, envía las conve
 - Streaming SSE real con fallback a respuestas JSON.
 - Conversión de tools y `tool_result` al formato OpenAI.
 - Cancelación del request enlazada al `AbortSignal` de Command Code.
+- Sin timeout interno de duración para las peticiones; una operación solo termina al completar, fallar o ser cancelada por Command Code.
 - Selección de modelo y reasoning effort desde `/cliproxy`.
 - No modifica `settings.json`.
 - No reclama IDs del catálogo de Command Code.
@@ -185,6 +186,8 @@ El mod convierte las tools de Command Code a:
 Las respuestas SSE se procesan incrementalmente. Se acumulan llamadas de tools fragmentadas por índice y se convierten a bloques `tool_use`. Los resultados de tools se envían como mensajes OpenAI `role: "tool"` con `tool_call_id`.
 
 Si el servidor no devuelve `text/event-stream`, se acepta una respuesta JSON compatible.
+
+El provider no impone un límite de duración propio. Una petición puede permanecer abierta mientras el backend genera la respuesta, incluso si el stream ya entregó tokens. Si el backend deja de responder, la petición puede esperar indefinidamente hasta que Command Code o el usuario la cancele.
 
 ## Limitaciones conocidas
 

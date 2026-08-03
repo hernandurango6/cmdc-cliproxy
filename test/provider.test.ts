@@ -35,7 +35,6 @@ function providerWithFetch(fetchImpl: typeof fetch, options: Record<string, unkn
 		baseUrl: 'http://proxy.test/v1/',
 		apiKey: 'config-key',
 		fetchImpl,
-		timeoutMs: 1_000,
 		...options,
 	});
 }
@@ -181,11 +180,16 @@ test('uses a mutable effort getter for later requests', async () => {
 	assert.equal(bodies[1].reasoning_effort, 'max');
 });
 
-test('converts timeout aborts into a useful timeout error', async () => {
-	const provider = providerWithFetch((_url, init) => new Promise<Response>((_resolve, reject) => {
-		init?.signal?.addEventListener('abort', () => reject(new DOMException('Timeout', 'AbortError')), {once: true});
-	}), {timeoutMs: 5});
-	await assert.rejects(provider.transport.stream(baseRequest()), /timed out after 5ms/);
+test('allows a delayed response without an internal deadline', async () => {
+	let fetchSignal: AbortSignal | undefined;
+	const provider = providerWithFetch(async (_url, init) => {
+		fetchSignal = init?.signal as AbortSignal | undefined;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		return jsonResponse({choices: [{message: {content: 'DELAYED_OK'}, finish_reason: 'stop'}]});
+	});
+	const result = await provider.transport.stream(baseRequest());
+	assert.equal(fetchSignal, undefined);
+	assert.deepEqual(result.content, [{type: 'text', text: 'DELAYED_OK'}]);
 });
 
 test('factory registers once and updates model, effort, and status live', async () => {
@@ -295,6 +299,7 @@ test('propagates caller cancellation to fetch', async () => {
 	const pending = provider.transport.stream(baseRequest({signal: controller.signal}));
 	controller.abort();
 	await assert.rejects(pending, /abort/i);
+	assert.equal(fetchSignal, controller.signal);
 	assert.equal(fetchSignal?.aborted, true);
 });
 

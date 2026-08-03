@@ -49,7 +49,6 @@ export interface CLIProxyProviderOptions {
 	defaultEffort?: string;
 	getEffort?: () => string | undefined;
 	fetchImpl?: typeof fetch;
-	timeoutMs?: number;
 }
 
 export interface CLIProxyRequest {
@@ -431,35 +430,12 @@ function errorTextFromBody(body: string): string {
 	}
 }
 
-function makeCombinedSignal(callerSignal: AbortSignal | undefined, timeoutMs: number) {
-	const controller = new AbortController();
-	let timedOut = false;
-	const abortFromCaller = () => controller.abort(callerSignal?.reason);
-	if (callerSignal) {
-		if (callerSignal.aborted) abortFromCaller();
-		else callerSignal.addEventListener('abort', abortFromCaller, {once: true});
-	}
-	const timer = setTimeout(() => {
-		timedOut = true;
-		controller.abort(new DOMException('Timeout', 'TimeoutError'));
-	}, timeoutMs);
-	return {
-		signal: controller.signal,
-		timedOut: () => timedOut,
-		cleanup: () => {
-			clearTimeout(timer);
-			callerSignal?.removeEventListener('abort', abortFromCaller);
-		},
-	};
-}
-
 export function createCLIProxyProvider(options: CLIProxyProviderOptions = {}) {
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 	const baseUrl = normalizeBaseUrl(
 		options.baseUrl ?? process.env.CLIPROXY_BASE_URL ?? DEFAULT_BASE_URL,
 	);
 	const fallbackApiKey = options.apiKey ?? process.env.CLIPROXY_API_KEY ?? '';
-	const timeoutMs = options.timeoutMs ?? 120_000;
 	const getEffort = options.getEffort ?? (() => options.defaultEffort ?? DEFAULT_EFFORT);
 
 	return {
@@ -499,44 +475,34 @@ export function createCLIProxyProvider(options: CLIProxyProviderOptions = {}) {
 						? {max_tokens: req.maxTokens ?? req.maxOutputTokens}
 						: {}),
 				};
-				const combined = makeCombinedSignal(req.signal, timeoutMs);
-				try {
-					const response = await fetchImpl(`${baseUrl}/chat/completions`, {
-						method: 'POST',
-						headers,
-						body: JSON.stringify(requestBody),
-						signal: combined.signal,
-					});
-					if (!response.ok) {
-						const body = await response.text().catch(() => '');
-						throw new Error(`CLIProxyAPI HTTP ${response.status}: ${errorTextFromBody(body).slice(0, 500)}`);
-					}
-
-					const accumulator = createResponseAccumulator(req);
-					const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-					if (contentType.includes('text/event-stream')) {
-						await consumeSse(response, req, accumulator);
-					} else {
-						const data = await readJsonResponse(response);
-						throwIfOpenAIError(data, 'response');
-						if (!Array.isArray(data?.choices) || data.choices.length === 0) {
-							throw new Error('CLIProxyAPI response did not contain choices');
-						}
-						accumulator.processChunk(data);
-					}
-					const result = accumulator.finish();
-					return {
-						...result,
-						raw: undefined,
-					};
-				} catch (error) {
-					if (combined.timedOut() && !req.signal?.aborted) {
-						throw new Error(`CLIProxyAPI request timed out after ${timeoutMs}ms`);
-					}
-					throw error;
-				} finally {
-					combined.cleanup();
+				const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+					method: 'POST',
+					headers,
+					body: JSON.stringify(requestBody),
+					signal: req.signal,
+				});
+				if (!response.ok) {
+					const body = await response.text().catch(() => '');
+					throw new Error(`CLIProxyAPI HTTP ${response.status}: ${errorTextFromBody(body).slice(0, 500)}`);
 				}
+
+				const accumulator = createResponseAccumulator(req);
+				const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+				if (contentType.includes('text/event-stream')) {
+					await consumeSse(response, req, accumulator);
+				} else {
+					const data = await readJsonResponse(response);
+					throwIfOpenAIError(data, 'response');
+					if (!Array.isArray(data?.choices) || data.choices.length === 0) {
+						throw new Error('CLIProxyAPI response did not contain choices');
+					}
+					accumulator.processChunk(data);
+				}
+				const result = accumulator.finish();
+				return {
+					...result,
+					raw: undefined,
+				};
 			},
 		},
 		auth: {
